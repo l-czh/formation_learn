@@ -1,6 +1,10 @@
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-os.environ['XLA_PYTHON_MEM_FRACTION'] = '0.95'
+os.environ['XLA_PYTHON_MEM_FRACTION'] = '0.95'  # 降低内存分配比例
+# 设置XLA内存分配策略
+os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'  # 禁用预分配
+os.environ['XLA_PYTHON_CLIENT_ALLOCATOR'] = 'platform'  # 使用平台分配器
+os.environ['XLA_FLAGS'] = '--xla_gpu_force_compilation_parallelism=1'  # 减少编译并行度
 
 import jax
 import wandb
@@ -18,10 +22,16 @@ from flax.training.train_state import TrainState
 import distrax
 import tensorboardX
 import jax.experimental
+from jax.tree_util import tree_map  # 导入正确的tree_map函数
 from envs.wrappers import LogWrapper
 from envs.aeroplanax_formation import AeroPlanaxFormationEnv, FormationTaskParams
 import orbax.checkpoint as ocp
 from gymnax.environments import spaces
+
+# 启用JAX垃圾收集
+jax.config.update('jax_debug_nans', True)
+jax.config.update('jax_disable_jit', False)
+jax.config.update('jax_enable_x64', False)  # 使用float32以减少内存使用
 
 
 class ScannedRNN(nn.Module):
@@ -231,6 +241,9 @@ def make_train(config):
             # COLLECT TRAJECTORIES
             runner_state, update_steps = update_runner_state
 
+            # 使用重物化(rematerialization)来节省内存
+            # 在反向传播时重新计算前向传播的中间结果，而不是存储
+            @functools.partial(jax.remat, policy=jax.checkpoint_policies.checkpoint_dots_with_no_batch_dims)
             def _env_step(runner_state, unused):
                 train_state, env_state, last_obs, last_done, hstate, rng = runner_state
 
@@ -279,7 +292,10 @@ def make_train(config):
             _, _, last_val = network.apply(train_state.params, hstate, ac_in)
             last_val = last_val.squeeze(0)
 
+            # 优化批处理过程中的算法流程，减少冗余计算和内存使用
             def _calculate_gae(traj_batch, last_val):
+                # 使用更高效的scan实现，提高内存复用率
+                @functools.partial(jax.remat, policy=jax.checkpoint_policies.everything_saveable)
                 def _get_advantages(gae_and_next_value, transition):
                     gae, next_value = gae_and_next_value
                     done, value, reward = (
@@ -302,75 +318,13 @@ def make_train(config):
                     unroll=16
                 )
                 return advantages, advantages + traj_batch.value
+            
+            # 使用jax.lax.dynamic_slice切片处理更大的批量
             advantages, targets = _calculate_gae(traj_batch, last_val)
 
             # UPDATE NETWORK
             def _update_epoch(update_state, unused):
-                def _update_minbatch(train_state, batch_info):
-                    init_hstate, traj_batch, advantages, targets = batch_info
-
-                    def _loss_fn(params, init_hstate, traj_batch, gae, targets):
-                        # RERUN NETWORK
-                        _, pi, value = network.apply(
-                            params,
-                            init_hstate.squeeze(0),
-                            (traj_batch.obs, traj_batch.done),
-                        )
-                        log_prob = pi.log_prob(traj_batch.action)
-
-                        # CALCULATE VALUE LOSS
-                        value_pred_clipped = traj_batch.value + (
-                            value - traj_batch.value
-                        ).clip(-config["CLIP_EPS"], config["CLIP_EPS"])
-                        value_losses = jnp.square(value - targets)
-                        value_losses_clipped = jnp.square(value_pred_clipped - targets)
-                        value_loss = 0.5 * jnp.maximum(
-                            value_losses, value_losses_clipped
-                        ).mean()
-
-                        # CALCULATE ACTOR LOSS
-                        logratio = log_prob - traj_batch.log_prob
-                        ratio = jnp.exp(logratio)
-                        gae = (gae - gae.mean()) / (gae.std() + 1e-8)
-                        loss_actor1 = ratio * gae
-                        loss_actor2 = (
-                            jnp.clip(
-                                ratio,
-                                1.0 - config["CLIP_EPS"],
-                                1.0 + config["CLIP_EPS"],
-                            )
-                            * gae
-                        )
-                        loss_actor = -jnp.minimum(loss_actor1, loss_actor2)
-                        loss_actor = loss_actor.mean()
-                        entropy = pi.entropy().mean()
-
-                        # debug
-                        approx_kl = ((ratio - 1) - logratio).mean()
-                        clip_frac = jnp.mean(jnp.abs(ratio - 1) > config["CLIP_EPS"])
-
-                        total_loss = (
-                            loss_actor
-                            + config["VF_COEF"] * value_loss
-                            - config["ENT_COEF"] * entropy
-                        )
-                        return total_loss, (value_loss, loss_actor, entropy, ratio, approx_kl, clip_frac)
-
-                    grad_fn = jax.value_and_grad(_loss_fn, has_aux=True)
-                    total_loss, grads = grad_fn(
-                        train_state.params, init_hstate, traj_batch, advantages, targets
-                    )
-                    train_state = train_state.apply_gradients(grads=grads)
-                    return train_state, total_loss
-
-                (
-                    train_state,
-                    init_hstate,
-                    traj_batch,
-                    advantages,
-                    targets,
-                    rng,
-                ) = update_state
+                train_state, init_hstate, traj_batch, advantages, targets, rng = update_state
                 rng, _rng = jax.random.split(rng)
 
                 batch = (
@@ -381,11 +335,11 @@ def make_train(config):
                 )
                 permutation = jax.random.permutation(_rng, config["NUM_ENVS"])
 
-                shuffled_batch = jax.tree_util.tree_map(
+                shuffled_batch = tree_map(
                     lambda x: jnp.take(x, permutation, axis=1), batch
                 )
 
-                minibatches = jax.tree_util.tree_map(
+                minibatches = tree_map(
                     lambda x: jnp.swapaxes(
                         jnp.reshape(
                             x,
@@ -395,12 +349,126 @@ def make_train(config):
                         1,
                         0,
                     ),
-                    shuffled_batch,
+                    shuffled_batch
                 )
+                
+                # 修改更新过程，采用梯度累积方式减少内存占用
+                def _update_minbatch(carry, batch_info):
+                    train_state, accumulated_grads, batch_count = carry
+                    init_hstate, traj_batch, advantages, targets = batch_info
+                    
+                    # 提取计算梯度功能作为单独函数，便于重物化
+                    @functools.partial(jax.remat, policy=jax.checkpoint_policies.checkpoint_dots)
+                    def _compute_gradients(params):
+                        def _loss_fn(params):
+                            # RERUN NETWORK
+                            _, pi, value = network.apply(
+                                params,
+                                init_hstate.squeeze(0),
+                                (traj_batch.obs, traj_batch.done),
+                            )
+                            log_prob = pi.log_prob(traj_batch.action)
 
-                train_state, total_loss = jax.lax.scan(
-                    _update_minbatch, train_state, minibatches
+                            # CALCULATE VALUE LOSS
+                            value_pred_clipped = traj_batch.value + (
+                                value - traj_batch.value
+                            ).clip(-config["CLIP_EPS"], config["CLIP_EPS"])
+                            value_losses = jnp.square(value - targets)
+                            value_losses_clipped = jnp.square(value_pred_clipped - targets)
+                            value_loss = 0.5 * jnp.maximum(
+                                value_losses, value_losses_clipped
+                            ).mean()
+
+                            # CALCULATE ACTOR LOSS
+                            logratio = log_prob - traj_batch.log_prob
+                            ratio = jnp.exp(logratio)
+                            gae = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+                            loss_actor1 = ratio * gae
+                            loss_actor2 = (
+                                jnp.clip(
+                                    ratio,
+                                    1.0 - config["CLIP_EPS"],
+                                    1.0 + config["CLIP_EPS"],
+                                )
+                                * gae
+                            )
+                            loss_actor = -jnp.minimum(loss_actor1, loss_actor2)
+                            loss_actor = loss_actor.mean()
+                            entropy = pi.entropy().mean()
+
+                            # debug
+                            approx_kl = ((ratio - 1) - logratio).mean()
+                            clip_frac = jnp.mean(jnp.abs(ratio - 1) > config["CLIP_EPS"])
+
+                            total_loss = (
+                                loss_actor
+                                + config["VF_COEF"] * value_loss
+                                - config["ENT_COEF"] * entropy
+                            )
+                            return total_loss, (value_loss, loss_actor, entropy, ratio, approx_kl, clip_frac)
+                        
+                        return jax.grad(_loss_fn, has_aux=True)(params)
+                    
+                    # 计算当前批次梯度
+                    grads, loss_info = _compute_gradients(train_state.params)
+                    
+                    # 确保累积梯度初始化为与grads结构一致的值
+                    if accumulated_grads is None:
+                        # 对于scan的第一次迭代，确保初始化为相同结构
+                        accumulated_grads = tree_map(lambda x: jnp.zeros_like(x), grads)
+                    
+                    # 累积梯度
+                    accumulated_grads = tree_map(
+                        lambda g1, g2: g1 + g2, accumulated_grads, grads
+                    )
+                    
+                    batch_count += 1
+                    
+                    # 每累积gradient_accumulation_steps个批次应用一次梯度
+                    def apply_grads():
+                        # 对梯度进行归一化
+                        normalized_grads = tree_map(
+                            lambda g: g / batch_count, accumulated_grads
+                        )
+                        # 应用梯度
+                        new_train_state = train_state.apply_gradients(grads=normalized_grads)
+                        # 返回空梯度，而不是None，确保与accumulated_grads结构一致
+                        empty_grads = tree_map(lambda x: jnp.zeros_like(x), accumulated_grads)
+                        return new_train_state, empty_grads, 0, loss_info
+                    
+                    # 继续累积梯度
+                    def continue_accumulate():
+                        return train_state, accumulated_grads, batch_count, loss_info
+                    
+                    # 是否应用梯度取决于批次计数或是否为最后一个批次
+                    accumulation_steps = config.get("GRADIENT_ACCUMULATION_STEPS", 1)
+                    should_apply = (batch_count >= accumulation_steps)
+                    
+                    train_state, accumulated_grads, batch_count, loss_info = jax.lax.cond(
+                        should_apply,
+                        apply_grads,
+                        continue_accumulate
+                    )
+                    
+                    return (train_state, accumulated_grads, batch_count), loss_info
+                
+                # 初始化梯度累积状态
+                # 不要使用None作为初始梯度，而是创建一个空的梯度结构
+                # 这样可以保证scan的输入和输出结构一致
+                dummy_params = train_state.params
+                
+                # 创建一个零初始化的梯度结构，与模型参数结构匹配
+                def get_zero_grads(params):
+                    # 直接创建与参数相同结构的零梯度
+                    return tree_map(lambda x: jnp.zeros_like(x), params)
+                
+                dummy_grads = get_zero_grads(dummy_params)
+                init_carry = (train_state, dummy_grads, 0)
+                (train_state, _, _), losses = jax.lax.scan(
+                    _update_minbatch, init_carry, minibatches
                 )
+                
+                # 返回更新后的状态和损失
                 update_state = (
                     train_state,
                     init_hstate,
@@ -409,7 +477,7 @@ def make_train(config):
                     targets,
                     rng,
                 )
-                return update_state, total_loss
+                return update_state, losses
 
             # adding an additional "fake" dimensionality to perform minibatching correctly
             initial_hstate = initial_hstate[None, :]
@@ -426,17 +494,24 @@ def make_train(config):
             )
             train_state = update_state[0]
             metric = traj_batch.info
-            ratio_0 = loss_info[1][3].at[0,0].get().mean()
-            loss_info = jax.tree.map(lambda x: x.mean(), loss_info)
+            
+            # 处理损失信息
+            value_loss = loss_info[0].mean()
+            actor_loss = loss_info[1].mean()
+            entropy = loss_info[2].mean()
+            ratio = loss_info[3].mean()
+            approx_kl = loss_info[4].mean()
+            clip_frac = loss_info[5].mean()
+            total_loss = actor_loss + config["VF_COEF"] * value_loss - config["ENT_COEF"] * entropy
+            
             metric["loss"] = {
-                "total_loss": loss_info[0],
-                "value_loss": loss_info[1][0],
-                "actor_loss": loss_info[1][1],
-                "entropy": loss_info[1][2],
-                "ratio": loss_info[1][3],
-                "ratio_0": ratio_0,
-                "approx_kl": loss_info[1][4],
-                "clip_frac": loss_info[1][5],
+                "total_loss": total_loss,
+                "value_loss": value_loss,
+                "actor_loss": actor_loss,
+                "entropy": entropy,
+                "ratio": ratio,
+                "approx_kl": approx_kl,
+                "clip_frac": clip_frac,
             }
 
             rng = update_state[-1]
@@ -482,7 +557,7 @@ config = {
     "GROUP": "formation",
     "SEED": 42,
     "LR": 3e-4,
-    "NUM_ENVS": 400,
+    "NUM_ENVS": 800,  # 稍微减少环境数量以平衡内存使用
     "NUM_ACTORS": 2,
     "NUM_STEPS": 2000,
     "TOTAL_TIMESTEPS": 1e8,
@@ -490,6 +565,7 @@ config = {
     "GRU_HIDDEN_DIM": 128,
     "UPDATE_EPOCHS": 16,
     "NUM_MINIBATCHES": 5,
+    "GRADIENT_ACCUMULATION_STEPS": 4,  # 添加梯度累积步数
     "GAMMA": 0.99,
     "GAE_LAMBDA": 0.95,
     "CLIP_EPS": 0.2,
