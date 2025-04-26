@@ -1,6 +1,6 @@
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-os.environ['XLA_PYTHON_MEM_FRACTION'] = '0.7'
+os.environ['XLA_PYTHON_MEM_FRACTION'] = '0.95'
 
 import jax
 import wandb
@@ -21,6 +21,7 @@ import jax.experimental
 from envs.wrappers import LogWrapper
 from envs.aeroplanax_formation import AeroPlanaxFormationEnv, FormationTaskParams
 import orbax.checkpoint as ocp
+from gymnax.environments import spaces
 
 
 class ScannedRNN(nn.Module):
@@ -164,7 +165,26 @@ def make_train(config):
 
     def train(rng):
         # INIT NETWORK
-        network = ActorCriticRNN(env.action_space(env.agents[0], env_params).shape[0], config=config)
+        action_space = env.action_spaces[env.agents[0]]
+        # 提取action_space的形状
+        if isinstance(action_space, spaces.Box):
+            action_dim = action_space.shape[0]
+        elif hasattr(action_space, '__dict__') and hasattr(action_space, 'spaces'):
+            # 对于gymnax的Dict类型空间，直接访问其spaces属性
+            spaces_dict = action_space.spaces
+            total_dim = 0
+            for space in spaces_dict.values():
+                if hasattr(space, 'n'):  # Discrete空间
+                    total_dim += 1
+                elif hasattr(space, 'shape'):  # Box空间
+                    total_dim += np.prod(space.shape)
+                else:
+                    raise ValueError(f"不支持的子空间类型: {type(space)}")
+            action_dim = total_dim
+        else:
+            raise ValueError(f"不支持的动作空间类型: {type(action_space)}")
+        
+        network = ActorCriticRNN(action_dim, config=config)
         rng, _rng = jax.random.split(rng)
         init_x = (
             jnp.zeros(
@@ -462,10 +482,10 @@ config = {
     "GROUP": "formation",
     "SEED": 42,
     "LR": 3e-4,
-    "NUM_ENVS": 1000,
+    "NUM_ENVS": 400,
     "NUM_ACTORS": 2,
-    "NUM_STEPS": 3000,
-    "TOTAL_TIMESTEPS": 1e9,
+    "NUM_STEPS": 2000,
+    "TOTAL_TIMESTEPS": 1e8,
     "FC_DIM_SIZE": 128,
     "GRU_HIDDEN_DIM": 128,
     "UPDATE_EPOCHS": 16,
