@@ -1,0 +1,38 @@
+{
+  "os": "Linux-6.8.0-57-generic-x86_64-with-glibc2.35",
+  "python": "CPython 3.10.14",
+  "startedAt": "2025-04-26T09:09:50.458747Z",
+  "program": "/home/lczh/Git Project/formation/AeroPlanax/train_formation.py",
+  "codePath": "AeroPlanax/train_formation.py",
+  "email": "610214703@qq.com",
+  "root": "/home/lczh/Git Project/formation",
+  "host": "lczh-PC",
+  "executable": "/home/lczh/anaconda3/envs/Neuralplane/bin/python",
+  "codePathLocal": "AeroPlanax/train_formation.py",
+  "cpu_count": 20,
+  "cpu_count_logical": 28,
+  "gpu": "NVIDIA GeForce RTX 4070 Ti SUPER",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "501595742208",
+      "used": "70878081024"
+    }
+  },
+  "memory": {
+    "total": "33482088448"
+  },
+  "cpu": {
+    "count": 20,
+    "countLogical": 28
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA GeForce RTX 4070 Ti SUPER",
+      "memoryTotal": "17171480576",
+      "cudaCores": 8448,
+      "architecture": "Ada"
+    }
+  ],
+  "cudaVersion": "12.4"
+}

@@ -1,0 +1,39 @@
+2025-04-26 17:09:50,455 INFO    MainThread:2071869 [wandb_setup.py:_flush():68] Current SDK version is 0.19.10
+2025-04-26 17:09:50,456 INFO    MainThread:2071869 [wandb_setup.py:_flush():68] Configure stats pid to 2071869
+2025-04-26 17:09:50,456 INFO    MainThread:2071869 [wandb_setup.py:_flush():68] Loading settings from /home/lczh/.config/wandb/settings
+2025-04-26 17:09:50,456 INFO    MainThread:2071869 [wandb_setup.py:_flush():68] Loading settings from /home/lczh/Git Project/formation/wandb/settings
+2025-04-26 17:09:50,456 INFO    MainThread:2071869 [wandb_setup.py:_flush():68] Loading settings from environment variables
+2025-04-26 17:09:50,456 INFO    MainThread:2071869 [wandb_init.py:setup_run_log_directory():724] Logging user logs to /home/lczh/Git Project/formation/wandb/run-20250426_170950-0ndob5u4/logs/debug.log
+2025-04-26 17:09:50,456 INFO    MainThread:2071869 [wandb_init.py:setup_run_log_directory():725] Logging internal logs to /home/lczh/Git Project/formation/wandb/run-20250426_170950-0ndob5u4/logs/debug-internal.log
+2025-04-26 17:09:50,456 INFO    MainThread:2071869 [wandb_init.py:init():852] calling init triggers
+2025-04-26 17:09:50,456 INFO    MainThread:2071869 [wandb_init.py:init():857] wandb.init called with sweep_config: {}
+config: {'GROUP': 'formation', 'SEED': 42, 'LR': 0.0003, 'NUM_ENVS': 400, 'NUM_ACTORS': 2, 'NUM_STEPS': 500, 'TOTAL_TIMESTEPS': 100000000.0, 'FC_DIM_SIZE': 128, 'GRU_HIDDEN_DIM': 128, 'UPDATE_EPOCHS': 8, 'NUM_MINIBATCHES': 4, 'GRADIENT_ACCUMULATION_STEPS': 16, 'GAMMA': 0.99, 'GAE_LAMBDA': 0.95, 'CLIP_EPS': 0.2, 'ENT_COEF': 0.001, 'VF_COEF': 1, 'MAX_GRAD_NORM': 2, 'ACTIVATION': 'relu', 'ANNEAL_LR': False, 'DEBUG': True, 'OUTPUTDIR': 'results/2025-04-26-17-09', 'LOGDIR': 'results/2025-04-26-17-09/logs', 'SAVEDIR': 'results/2025-04-26-17-09/checkpoints', '_wandb': {}}
+2025-04-26 17:09:50,456 INFO    MainThread:2071869 [wandb_init.py:init():893] starting backend
+2025-04-26 17:09:50,456 INFO    MainThread:2071869 [wandb_init.py:init():897] sending inform_init request
+2025-04-26 17:09:50,458 INFO    MainThread:2071869 [backend.py:_multiprocessing_setup():101] multiprocessing start_methods=fork,spawn,forkserver, using: spawn
+2025-04-26 17:09:50,458 INFO    MainThread:2071869 [wandb_init.py:init():907] backend started and connected
+2025-04-26 17:09:50,459 INFO    MainThread:2071869 [wandb_init.py:init():1002] updated telemetry
+2025-04-26 17:09:50,459 INFO    MainThread:2071869 [wandb_init.py:init():1026] communicating run to backend with 90.0 second timeout
+2025-04-26 17:09:51,504 INFO    MainThread:2071869 [wandb_init.py:init():1101] starting run threads in backend
+2025-04-26 17:09:51,585 INFO    MainThread:2071869 [wandb_run.py:_console_start():2566] atexit reg
+2025-04-26 17:09:51,585 INFO    MainThread:2071869 [wandb_run.py:_redirect():2414] redirect: wrap_raw
+2025-04-26 17:09:51,585 INFO    MainThread:2071869 [wandb_run.py:_redirect():2483] Wrapping output streams.
+2025-04-26 17:09:51,585 INFO    MainThread:2071869 [wandb_run.py:_redirect():2506] Redirects installed.
+2025-04-26 17:09:51,586 INFO    MainThread:2071869 [wandb_init.py:init():1147] run started, returning control to user process
+2025-04-26 17:09:51,988 INFO    MainThread:2071869 [wandb_run.py:_tensorboard_callback():1638] tensorboard callback: results/2025-04-26-17-09/logs, True
+2025-04-26 17:13:10,328 INFO    MainThread:2071869 [wandb_run.py:_tensorboard_callback():1638] tensorboard callback: results/2025-04-26-17-09/logs, True
+2025-04-26 17:15:40,163 INFO    MainThread:2071869 [wandb_run.py:_tensorboard_callback():1638] tensorboard callback: results/2025-04-26-17-09/logs, True
+2025-04-26 17:18:09,843 INFO    MainThread:2071869 [wandb_run.py:_tensorboard_callback():1638] tensorboard callback: results/2025-04-26-17-09/logs, True
+2025-04-26 17:20:38,144 INFO    MainThread:2071869 [wandb_run.py:_tensorboard_callback():1638] tensorboard callback: results/2025-04-26-17-09/logs, True
+2025-04-26 17:23:05,931 INFO    MainThread:2071869 [wandb_run.py:_tensorboard_callback():1638] tensorboard callback: results/2025-04-26-17-09/logs, True
+2025-04-26 17:25:33,888 INFO    MainThread:2071869 [wandb_run.py:_tensorboard_callback():1638] tensorboard callback: results/2025-04-26-17-09/logs, True
+2025-04-26 17:28:02,880 INFO    MainThread:2071869 [wandb_run.py:_tensorboard_callback():1638] tensorboard callback: results/2025-04-26-17-09/logs, True
+2025-04-26 17:30:29,204 INFO    MainThread:2071869 [wandb_run.py:_tensorboard_callback():1638] tensorboard callback: results/2025-04-26-17-09/logs, True
+2025-04-26 17:32:55,658 INFO    MainThread:2071869 [wandb_run.py:_tensorboard_callback():1638] tensorboard callback: results/2025-04-26-17-09/logs, True
+2025-04-26 17:35:22,302 INFO    MainThread:2071869 [wandb_run.py:_finish():2314] finishing run lczh12138-beijing-institute-of-technology/AeroPlanax/0ndob5u4
+2025-04-26 17:35:22,303 INFO    MainThread:2071869 [wandb_run.py:_atexit_cleanup():2531] got exitcode: 0
+2025-04-26 17:35:22,303 INFO    MainThread:2071869 [wandb_run.py:_restore():2513] restore
+2025-04-26 17:35:22,303 INFO    MainThread:2071869 [wandb_run.py:_restore():2519] restore done
+2025-04-26 17:35:25,406 INFO    MainThread:2071869 [wandb_run.py:_footer_history_summary_info():4160] rendering history
+2025-04-26 17:35:25,408 INFO    MainThread:2071869 [wandb_run.py:_footer_history_summary_info():4192] rendering summary
+2025-04-26 17:35:25,408 INFO    MainThread:2071869 [wandb_run.py:_footer_sync_info():4121] logging synced files

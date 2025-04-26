@@ -1,0 +1,16 @@
+{"time":"2025-04-26T15:22:30.170510658+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.10","symlink path":"/home/lczh/Git Project/formation/wandb/run-20250426_152230-u1v1n5oj/logs/debug-core.log"}
+{"time":"2025-04-26T15:22:30.80552555+08:00","level":"INFO","msg":"created new stream","id":"u1v1n5oj"}
+{"time":"2025-04-26T15:22:30.805623681+08:00","level":"INFO","msg":"stream: started","id":"u1v1n5oj"}
+{"time":"2025-04-26T15:22:30.805704712+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"u1v1n5oj"}
+{"time":"2025-04-26T15:22:30.805826891+08:00","level":"INFO","msg":"handler: started","stream_id":"u1v1n5oj"}
+{"time":"2025-04-26T15:22:30.805928712+08:00","level":"INFO","msg":"sender: started","stream_id":"u1v1n5oj"}
+{"time":"2025-04-26T15:22:31.138717711+08:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-04-26T15:22:31.591325212+08:00","level":"WARN","msg":"tensorboard: error while looking for next tfevents file","error":"tensorboard: directory is empty"}
+{"time":"2025-04-26T15:28:18.467102671+08:00","level":"INFO","msg":"stream: closing","id":"u1v1n5oj"}
+{"time":"2025-04-26T15:28:18.467134533+08:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-04-26T15:28:18.467245663+08:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-04-26T15:28:19.856346258+08:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-04-26T15:28:20.49913391+08:00","level":"INFO","msg":"handler: closed","stream_id":"u1v1n5oj"}
+{"time":"2025-04-26T15:28:20.499182899+08:00","level":"INFO","msg":"sender: closed","stream_id":"u1v1n5oj"}
+{"time":"2025-04-26T15:28:20.499167376+08:00","level":"INFO","msg":"writer: Close: closed","stream_id":"u1v1n5oj"}
+{"time":"2025-04-26T15:28:20.49931115+08:00","level":"INFO","msg":"stream: closed","id":"u1v1n5oj"}

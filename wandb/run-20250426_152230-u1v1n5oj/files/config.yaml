@@ -1,0 +1,78 @@
+_wandb:
+    value:
+        cli_version: 0.19.10
+        m: []
+        python_version: 3.10.14
+        t:
+            "1":
+                - 1
+                - 12
+                - 45
+                - 55
+            "2":
+                - 1
+                - 12
+                - 45
+                - 55
+            "3":
+                - 13
+                - 16
+                - 23
+                - 34
+                - 55
+            "4": 3.10.14
+            "5": 0.19.10
+            "8":
+                - 5
+            "10":
+                - 20
+            "12": 0.19.10
+            "13": linux-x86_64
+ACTIVATION:
+    value: relu
+ANNEAL_LR:
+    value: false
+CLIP_EPS:
+    value: 0.2
+DEBUG:
+    value: true
+ENT_COEF:
+    value: 0.001
+FC_DIM_SIZE:
+    value: 128
+GAE_LAMBDA:
+    value: 0.95
+GAMMA:
+    value: 0.99
+GRADIENT_ACCUMULATION_STEPS:
+    value: 4
+GROUP:
+    value: formation
+GRU_HIDDEN_DIM:
+    value: 128
+LOGDIR:
+    value: results/2025-04-26-15-22/logs
+LR:
+    value: 0.0003
+MAX_GRAD_NORM:
+    value: 2
+NUM_ACTORS:
+    value: 2
+NUM_ENVS:
+    value: 200
+NUM_MINIBATCHES:
+    value: 5
+NUM_STEPS:
+    value: 2000
+OUTPUTDIR:
+    value: results/2025-04-26-15-22
+SAVEDIR:
+    value: results/2025-04-26-15-22/checkpoints
+SEED:
+    value: 42
+TOTAL_TIMESTEPS:
+    value: 1e+08
+UPDATE_EPOCHS:
+    value: 16
+VF_COEF:
+    value: 1

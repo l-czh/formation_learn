@@ -1,0 +1,29 @@
+EnvStep=0          EpisodeLength=12.49 Return=-78120.77 SuccessRate=0.000
+EnvStep=400000     EpisodeLength=12.48 Return=-78105.27 SuccessRate=0.000
+EnvStep=800000     EpisodeLength=12.51 Return=-78530.37 SuccessRate=0.000
+EnvStep=1200000    EpisodeLength=12.54 Return=-78549.18 SuccessRate=0.000
+EnvStep=1600000    EpisodeLength=12.59 Return=-78891.93 SuccessRate=0.000
+EnvStep=2000000    EpisodeLength=12.61 Return=-79063.10 SuccessRate=0.000
+EnvStep=2400000    EpisodeLength=12.64 Return=-79113.23 SuccessRate=0.000
+EnvStep=2800000    EpisodeLength=12.65 Return=-79177.41 SuccessRate=0.000
+EnvStep=3200000    EpisodeLength=12.63 Return=-79229.97 SuccessRate=0.000
+EnvStep=3600000    EpisodeLength=12.69 Return=-79524.34 SuccessRate=0.000
+EnvStep=4000000    EpisodeLength=12.74 Return=-79964.38 SuccessRate=0.000
+EnvStep=4400000    EpisodeLength=12.70 Return=-79612.19 SuccessRate=0.000
+jax.errors.SimplifiedTraceback: For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/lczh/Git Project/formation/AeroPlanax/train_formation.py", line 605, in <module>
+    out = train_jit(rng)
+jaxlib.xla_extension.XlaRuntimeError: INTERNAL: CpuCallback error calling callback: Traceback (most recent call last):
+  File "/home/lczh/Git Project/formation/AeroPlanax/train_formation.py", line 605, in <module>
+  File "/home/lczh/anaconda3/envs/Neuralplane/lib/python3.10/site-packages/jax/_src/traceback_util.py", line 182, in reraise_with_filtered_traceback
+  File "/home/lczh/anaconda3/envs/Neuralplane/lib/python3.10/site-packages/jax/_src/pjit.py", line 340, in cache_miss
+  File "/home/lczh/anaconda3/envs/Neuralplane/lib/python3.10/site-packages/jax/_src/pjit.py", line 191, in _python_pjit_helper
+  File "/home/lczh/anaconda3/envs/Neuralplane/lib/python3.10/site-packages/jax/_src/pjit.py", line 1831, in _pjit_call_impl_python
+  File "/home/lczh/anaconda3/envs/Neuralplane/lib/python3.10/site-packages/jax/_src/profiler.py", line 334, in wrapper
+  File "/home/lczh/anaconda3/envs/Neuralplane/lib/python3.10/site-packages/jax/_src/interpreters/pxla.py", line 1289, in __call__
+  File "/home/lczh/anaconda3/envs/Neuralplane/lib/python3.10/site-packages/jax/_src/callback.py", line 810, in _wrapped_callback
+KeyboardInterrupt:
