@@ -24,3 +24,4 @@ for i in range(100):
     }
     obs, state, reward, done, _ = env.step(key_step, state, actions, env_params)
     print(f'Time: {state.time}, Done: {done}, Reward: {reward}')
+    #这是一个git测试..
