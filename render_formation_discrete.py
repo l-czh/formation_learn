@@ -265,5 +265,9 @@ config = {
     "ANNEAL_LR": False,
     "LOADDIR": "/home/dqy/NeuralPlanex/AeroPlanex_v/AeroPlanax/envs/models/heading baseline"
 }
+if "NUM_UPDATES" not in config:
+    config["NUM_UPDATES"] = (
+        config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ENVS"]
+    )
 rng = jax.random.PRNGKey(42)
 out = test(config, rng)

@@ -127,14 +127,34 @@ def make_train(config):
     env = AeroPlanaxFormationEnv(env_params)
     env = LogWrapper(env)
     config["NUM_ACTORS"] = env.num_agents
-    config["NUM_UPDATES"] = (
-        config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ENVS"]
-    )
+    if "NUM_UPDATES" not in config:
+        config["NUM_UPDATES"] = (
+            config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ENVS"]
+        )
     config["MINIBATCH_SIZE"] = (
         config["NUM_ACTORS"] * config["NUM_STEPS"] // config["NUM_MINIBATCHES"]
     )
     if "LOADDIR" in config:
-        network = ActorCriticRNN(env.action_space(env.agents[0], env_params).shape[0], config=config)
+        action_space = env.action_spaces[env.agents[0]]
+        # 提取action_space的形状
+        if isinstance(action_space, spaces.Box):
+            action_dim = action_space.shape[0]
+        elif hasattr(action_space, '__dict__') and hasattr(action_space, 'spaces'):
+            # 对于gymnax的Dict类型空间，直接访问其spaces属性
+            spaces_dict = action_space.spaces
+            total_dim = 0
+            for space in spaces_dict.values():
+                if hasattr(space, 'n'):  # Discrete空间
+                    total_dim += 1
+                elif hasattr(space, 'shape'):  # Box空间
+                    total_dim += np.prod(space.shape)
+                else:
+                    raise ValueError(f"不支持的子空间类型: {type(space)}")
+            action_dim = total_dim
+        else:
+            raise ValueError(f"不支持的动作空间类型: {type(action_space)}")
+        
+        network = ActorCriticRNN(action_dim, config=config)
         rng = jax.random.PRNGKey(42)
         init_x = (
             jnp.zeros(
@@ -557,15 +577,15 @@ config = {
     "GROUP": "formation",
     "SEED": 42,
     "LR": 3e-4,
-    "NUM_ENVS": 800,  # 稍微减少环境数量以平衡内存使用
+    "NUM_ENVS": 1500,  # 
     "NUM_ACTORS": 2,
-    "NUM_STEPS": 2000,
-    "TOTAL_TIMESTEPS": 1e8,
+    "NUM_STEPS": 1000,
+    "TOTAL_TIMESTEPS": 1e9, # 4070tis最多1e8
     "FC_DIM_SIZE": 128,
     "GRU_HIDDEN_DIM": 128,
-    "UPDATE_EPOCHS": 16,
-    "NUM_MINIBATCHES": 5,
-    "GRADIENT_ACCUMULATION_STEPS": 4,  # 添加梯度累积步数
+    "UPDATE_EPOCHS": 8,   # 从16减少到8
+    "NUM_MINIBATCHES": 4, # 从5减少到4
+    "GRADIENT_ACCUMULATION_STEPS": 16,  # 添加梯度累积步数
     "GAMMA": 0.99,
     "GAE_LAMBDA": 0.95,
     "CLIP_EPS": 0.2,
@@ -578,7 +598,7 @@ config = {
     "OUTPUTDIR": "results/" + str_date_time,
     "LOGDIR": "results/" + str_date_time + "/logs",
     "SAVEDIR": "results/" + str_date_time + "/checkpoints",
-    # "LOADDIR": "/home/xcy/AeroPlanax/results/2025-01-26-04-39/checkpoints/checkpoint_epoch_1" 
+    # "LOADDIR": "/home/lczh/Git Project/results/2025-04-26-15-31/checkpoints/checkpoint_epoch_62" 
 }
 
 seed = config['SEED']
@@ -588,7 +608,7 @@ wandb.init(
     project="AeroPlanax",
     # track hyperparameters and run metadata
     config=config,
-    name=f'seed_{seed}',
+    name=f'formation_{str_date_time}',
     group=config['GROUP'],
     notes='2 agents',
     # dir=config['LOGDIR'],
@@ -600,28 +620,84 @@ Path(output_dir).mkdir(parents=True, exist_ok=True)
 save_dir = config["SAVEDIR"]
 Path(save_dir).mkdir(parents=True, exist_ok=True)
 
+# 获取训练函数，但不使用jit
 rng = jax.random.PRNGKey(seed)
-train_jit = jax.jit(make_train(config))
-out = train_jit(rng)
+train_fn = make_train(config)
+
+# 改为使用Python的训练循环而不是JAX的scan
+# 计算总更新次数
+total_updates = int(config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ENVS"])
+# 每次运行的更新次数，控制在50次以内
+updates_per_run = min(50, total_updates)
+
+# 如果有加载点，从加载点继续训练
+if "LOADDIR" in config and config["LOADDIR"]:
+    print(f"Loading checkpoint from {config['LOADDIR']}")
+    ckptr = ocp.AsyncCheckpointer(ocp.StandardCheckpointHandler())
+    checkpoint = ckptr.restore(config['LOADDIR'])
+    start_epoch = int(checkpoint["epoch"])
+    print(f"Starting from epoch {start_epoch}")
+else:
+    start_epoch = 0
+    checkpoint = None
+
+# 存储训练结果
+all_metrics = []
+
+# 循环训练
+for start_idx in range(start_epoch, total_updates, updates_per_run):
+    # 限制本次运行的更新次数
+    end_idx = min(start_idx + updates_per_run, total_updates)
+    current_updates = end_idx - start_idx
+    
+    print(f"Running updates {start_idx} to {end_idx-1} (total: {current_updates})")
+    
+    # 修改config以适应当前运行
+    current_config = config.copy()
+    current_config["NUM_UPDATES"] = current_updates
+    
+    # 创建当前运行的训练函数并编译
+    current_train_fn = make_train(current_config)
+    current_train_jit = jax.jit(current_train_fn)
+    
+    # 运行训练
+    out = current_train_jit(rng)
+    
+    # 保存结果
+    all_metrics.append(out["metric"])
+    
+    # 更新随机数种子
+    rng = jax.random.fold_in(rng, end_idx)
+    
+    # 保存检查点
+    ckptr = ocp.AsyncCheckpointer(ocp.StandardCheckpointHandler())
+    checkpoint = {
+        "params": out['runner_state'][0][0].params,
+        "opt_state": out['runner_state'][0][0].opt_state,
+        "epoch": jnp.array(end_idx)
+    }
+    checkpoint_path = os.path.abspath(os.path.join(config["SAVEDIR"], f"checkpoint_epoch_{end_idx}"))
+    ckptr.save(checkpoint_path, args=ocp.args.StandardSave(checkpoint))
+    ckptr.wait_until_finished()
+    print(f"Checkpoint saved at epoch {end_idx}")
+
 wandb.finish()
 
-ckptr = ocp.AsyncCheckpointer(ocp.StandardCheckpointHandler())
-checkpoint = {
-    "params": out['runner_state'][0][0].params,
-    "opt_state": out['runner_state'][0][0].opt_state,
-    "epoch": jnp.array(out['runner_state'][1])
-}
-checkpoint_path = os.path.abspath(os.path.join(config["SAVEDIR"], f"checkpoint_epoch_{out['runner_state'][1]}"))
-ckptr.save(checkpoint_path, args=ocp.args.StandardSave(checkpoint))
-ckptr.wait_until_finished()
-print(f"Checkpoint saved at epoch {out['runner_state'][1]}")
-
-plt.plot(out["metric"]["returned_episode_returns"].mean(-1).reshape(-1))
-plt.xlabel("Update Step")
-plt.ylabel("Return")
-plt.savefig(output_dir + '/returned_episode_returns.png')
-plt.cla()
-plt.plot(out["metric"]["returned_episode_lengths"].mean(-1).reshape(-1))
-plt.xlabel("Update Step")
-plt.ylabel("Return")
-plt.savefig(output_dir + '/returned_episode_lengths.png')
+# 合并指标并绘图
+# 这部分需要根据实际的metrics结构进行调整
+# 简单示例:
+if all_metrics:
+    returns = jnp.concatenate([m["returned_episode_returns"].mean(-1).reshape(-1) for m in all_metrics])
+    plt.plot(returns)
+    plt.xlabel("Update Step")
+    plt.ylabel("Return")
+    plt.savefig(output_dir + '/returned_episode_returns.png')
+    plt.cla()
+    
+    lengths = jnp.concatenate([m["returned_episode_lengths"].mean(-1).reshape(-1) for m in all_metrics])
+    plt.plot(lengths)
+    plt.xlabel("Update Step")
+    plt.ylabel("Length")
+    plt.savefig(output_dir + '/returned_episode_lengths.png')
+else:
+    print("No metrics collected")
