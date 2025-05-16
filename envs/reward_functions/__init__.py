@@ -6,3 +6,4 @@ from .alive_reward import alive_reward_fn
 from .altitude_reward import altitude_reward_fn
 from .turn_count_reward import turn_count_reward_fn
 from .crash_penalty_reward import crash_penalty_fn
+from .heading_pitch_V_reward import heading_pitch_V_reward_fn

@@ -10,3 +10,4 @@ from .unreach_formation import unreach_formation_fn
 from .crashed import crashed_fn
 from .safe_return_with_missile import safe_return_with_missile_fn
 from .semicircle_complete import semicircle_complete_fn
+from .unreach_heading_pitch_V import unreach_heading_pitch_V_fn

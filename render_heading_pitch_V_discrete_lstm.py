@@ -1,5 +1,5 @@
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 os.environ['XLA_PYTHON_MEM_FRACTION'] = '0.7'
 
 import jax
@@ -17,13 +17,11 @@ from flax.training.train_state import TrainState
 import distrax
 import optax
 from envs.wrappers import LogWrapper
-# from envs.aeroplanax_turning_maneuverability_test import AeroPlanax_turning_maneuverability_Env, turning_maneuverability_TaskParams
-# from envs.aeroplanax_formation import AeroPlanaxFormationEnv, FormationTaskParams
-from envs.aeroplanax_formation_test import AeroPlanaxFormationEnv, FormationTaskParams
+from envs.aeroplanax_heading_pitch_V import AeroPlanaxHeading_Pitch_V_Env, Heading_Pitch_V_TaskParams
 import orbax.checkpoint as ocp
 
 
-class ScannedRNN(nn.Module):
+class ScannedLSTM(nn.Module):
     @functools.partial(
         nn.scan,
         variable_broadcast="params",
@@ -34,24 +32,30 @@ class ScannedRNN(nn.Module):
     @nn.compact
     def __call__(self, carry, x):
         """Applies the module."""
-        rnn_state = carry
+        lstm_state = carry  # (h, c)
         ins, resets = x
-        rnn_state = jnp.where(
+        h, c = lstm_state
+        h = jnp.where(
             resets[:, np.newaxis],
-            self.initialize_carry(*rnn_state.shape),
-            rnn_state,
+            self.initialize_carry(*h.shape)[0],
+            h,
         )
-        new_rnn_state, y = nn.GRUCell(features=ins.shape[1])(rnn_state, ins)
-        return new_rnn_state, y
+        c = jnp.where(
+            resets[:, np.newaxis],
+            self.initialize_carry(*c.shape)[1],
+            c,
+        )
+        new_lstm_state, y = nn.LSTMCell(features=ins.shape[1])((h, c), ins)
+        return new_lstm_state, y
 
     @staticmethod
     def initialize_carry(batch_size, hidden_size):
         # Use a dummy key since the default state init fn is just zeros.
-        cell = nn.GRUCell(features=hidden_size)
+        cell = nn.LSTMCell(features=hidden_size)
         return cell.initialize_carry(jax.random.PRNGKey(0), (batch_size, hidden_size))
 
 
-class ActorCriticRNN(nn.Module):
+class ActorCriticLSTM(nn.Module):
     action_dim: Sequence[int]
     config: Dict
 
@@ -68,11 +72,15 @@ class ActorCriticRNN(nn.Module):
         embedding = activation(embedding)
 
         rnn_in = (embedding, dones)
-        hidden, embedding = ScannedRNN()(hidden, rnn_in)
+        hidden, embedding = ScannedLSTM()(hidden, rnn_in)
+
+        # 新增一层全连接
+        nn_fc2 = nn.Dense(256, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0))(embedding)
+        nn_fc2 = activation(nn_fc2)
 
         actor_mean = nn.Dense(
             self.config["GRU_HIDDEN_DIM"], kernel_init=orthogonal(2), bias_init=constant(0.0)
-        )(embedding)
+        )(nn_fc2)
         actor_mean = activation(actor_mean)
         actor_throttle_mean = nn.Dense(
             self.action_dim[0], kernel_init=orthogonal(0.01), bias_init=constant(0.0)
@@ -101,6 +109,7 @@ class ActorCriticRNN(nn.Module):
 
         return hidden, (pi_throttle, pi_elevator, pi_aileron, pi_rudder), jnp.squeeze(critic, axis=-1)
 
+
 class Transition(NamedTuple):
     done: jnp.ndarray
     action: jnp.ndarray
@@ -109,6 +118,7 @@ class Transition(NamedTuple):
     log_prob: jnp.ndarray
     obs: jnp.ndarray
     info: jnp.ndarray
+
 
 def batchify(x: dict, agent_list, num_envs, num_actors):
     x = jnp.stack([x[a] for a in agent_list])
@@ -119,6 +129,7 @@ def unbatchify(x: jnp.ndarray, agent_list, num_envs, num_actors):
     x = x.reshape((num_actors, num_envs, -1))
     return {a: x[i] for i, a in enumerate(agent_list)}
 
+
 def test(config, rng):
     def linear_schedule(count):
         frac = (
@@ -128,13 +139,13 @@ def test(config, rng):
         )
         return config["LR"] * frac
     # init env
-    env_params = FormationTaskParams()
-    env = AeroPlanaxFormationEnv(env_params)
+    env_params = Heading_Pitch_V_TaskParams()
+    env = AeroPlanaxHeading_Pitch_V_Env(env_params)
     env = LogWrapper(env)
     config["NUM_ACTORS"] = env.num_agents
 
     # init model
-    network = ActorCriticRNN([31, 41, 41, 41], config=config)
+    network = ActorCriticLSTM([31, 41, 41, 41], config=config)
     rng = jax.random.PRNGKey(config['SEED'])
     init_x = (
         jnp.zeros(
@@ -142,7 +153,7 @@ def test(config, rng):
         ),
         jnp.zeros((1, config["NUM_ENVS"] * config["NUM_ACTORS"])),
     )
-    init_hstate = ScannedRNN.initialize_carry(config["NUM_ENVS"] * config["NUM_ACTORS"], config["GRU_HIDDEN_DIM"])
+    init_hstate = ScannedLSTM.initialize_carry(config["NUM_ACTORS"] * config["NUM_ENVS"], config["GRU_HIDDEN_DIM"])
     network_params = network.init(rng, init_hstate, init_x)
     if config["ANNEAL_LR"]:
         tx = optax.chain(
@@ -170,18 +181,15 @@ def test(config, rng):
     reset_rng = jax.random.split(_rng, config["NUM_ENVS"])
     obsv, env_state = jax.vmap(env.reset, in_axes=(0))(reset_rng)
     env.render(env_state.env_state, env_params, {'__all__': False}, './tracks/')
-    init_hstate = ScannedRNN.initialize_carry(config["NUM_ENVS"] * config["NUM_ACTORS"], config["GRU_HIDDEN_DIM"])
+    init_hstate = ScannedLSTM.initialize_carry(config["NUM_ACTORS"] * config["NUM_ENVS"], config["GRU_HIDDEN_DIM"])
 
+    # TEST LOOP
     def _env_step(test_state):
         env_state, last_obs, last_done, hstate, rng = test_state
-
         ac_in = (
             last_obs[np.newaxis, :],
             last_done[np.newaxis, :],
         )
-
-        ##############################################################################################################
-
         hstate, pi, value = network.apply(network_params, hstate, ac_in)
 
         pi_throttle, pi_elevator, pi_aileron, pi_rudder = pi
@@ -202,15 +210,14 @@ def test(config, rng):
         log_prob = log_prob_throttle + log_prob_elevator + log_prob_aileron + log_prob_rudder
 
         action = jnp.concatenate([action_throttle[:, :, np.newaxis], 
-                                  action_elevator[:, :, np.newaxis], 
-                                  action_aileron[:, :, np.newaxis], 
-                                  action_rudder[:, :, np.newaxis]], axis=-1)
-        action = jnp.tile(action[:, 0, :], (config["NUM_ACTORS"],  1))
-        
+                                action_elevator[:, :, np.newaxis], 
+                                action_aileron[:, :, np.newaxis], 
+                                action_rudder[:, :, np.newaxis]], axis=-1)
+
         value, action, log_prob = (
             value.squeeze(0),
-            action,
-            log_prob,
+            action.squeeze(0),
+            log_prob.squeeze(0),
         )
 
         # STEP ENV
@@ -219,7 +226,7 @@ def test(config, rng):
         obsv, env_state, reward, done, info = jax.vmap(
             env.step, in_axes=(0, 0, 0)
         )(rng_step, env_state, 
-            unbatchify(action, env.agents, config["NUM_ENVS"], config["NUM_ACTORS"]))
+          unbatchify(action, env.agents, config["NUM_ENVS"], config["NUM_ACTORS"]))
         env.render(env_state.env_state, env_params, done, './tracks/')
         reward = batchify(reward, env.agents, config["NUM_ENVS"], config["NUM_ACTORS"]).reshape(-1)
         transition = Transition(
@@ -229,6 +236,7 @@ def test(config, rng):
         done = batchify(done, env.agents, config["NUM_ENVS"], config["NUM_ACTORS"]).reshape(-1)
         test_state = (env_state, obsv, done, hstate, rng)
         return test_state, transition
+
     rng, _rng = jax.random.split(rng)
     test_state = (
         env_state,
@@ -237,11 +245,13 @@ def test(config, rng):
         init_hstate,
         _rng,
     )
-    for _ in range(5000):
+    for _ in range(1000):
         test_state, traj_batch = _env_step(test_state)
         env_state = test_state[0].env_state
-        # success_times = traj_batch.info['heading_turn_counts']
-        print(f'Time: {env_state.time}, Done: {test_state[2]}, Reward: {traj_batch.reward}')
+        success_times = traj_batch.info['heading_turn_counts']
+        print(f'Time: {env_state.time}, Done: {test_state[2]}, Success Times: {success_times}, Reward: {traj_batch.reward},vel_x: {env_state.plane_state.vel_x}, vel_y: {env_state.plane_state.vel_y}, vel_z: {env_state.plane_state.vel_z}, vt: {env_state.plane_state.vt}')
+        if test_state[2]:  # 如果done为true，退出循环
+            break
         
     return {"test_state": test_state, "trajectory": traj_batch}
 
@@ -250,7 +260,7 @@ config = {
     "SEED": 42,
     "LR": 3e-4,
     "NUM_ENVS": 1,
-    "NUM_ACTORS": 3,
+    "NUM_ACTORS": 1,
     "FC_DIM_SIZE": 128,
     "GRU_HIDDEN_DIM": 128,
     "UPDATE_EPOCHS": 16,
@@ -259,15 +269,11 @@ config = {
     "GAE_LAMBDA": 0.95,
     "CLIP_EPS": 0.2,
     "ENT_COEF": 1e-3,
-    "VF_COEF": 1, 
+    "VF_COEF": 1,
     "MAX_GRAD_NORM": 2,
     "ACTIVATION": "relu",
     "ANNEAL_LR": False,
-    "LOADDIR": "/home/dqy/NeuralPlanex/AeroPlanex_v/AeroPlanax/envs/models/heading baseline"
+    "LOADDIR": "/home/qiyuan/GitProject/results/heading_pitch_V_discrete_lstm_2025-05-13-12-59/checkpoints/checkpoint_epoch_560" 
 }
-if "NUM_UPDATES" not in config:
-    config["NUM_UPDATES"] = (
-        config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ENVS"]
-    )
 rng = jax.random.PRNGKey(42)
-out = test(config, rng)
+out = test(config, rng) 
